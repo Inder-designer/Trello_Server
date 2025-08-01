@@ -13,6 +13,7 @@ import Card from '../../models/Board/Card';
 import List from '../../models/Board/List';
 import { validateBoardOwnership } from '../../Utils/validateBoardOwnership';
 import { getIO } from '../../config/socket';
+import { createNotification } from '../../Utils/notification';
 
 export const inviteMember = catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
     const { boardId } = req.params;
@@ -330,6 +331,22 @@ export const toggleBoardClosure = catchAsyncErrors(async (req: Request, res: Res
         isClosed: board.isClosed,
         boardId: board._id
     });
+    // Optionally, you can also send a notification to the ALL board members
+    const targetUserIds = (board.members || [])
+        .filter((memberId: mongoose.Types.ObjectId) => !memberId.equals(board.owner));
+    await Promise.all(
+        targetUserIds.map((memberId: mongoose.Types.ObjectId) =>
+            createNotification({
+                createdBy: user._id,
+                userId: memberId,
+                type: "board",
+                data: {
+                    boardId: board._id,
+                    action: board.isClosed ? 'closeBoard' : 'reopenBoard'
+                }
+            })
+        )
+    );
 
     return ResponseHandler.send(res, `Board ${board.isClosed ? 'closed' : 'reopened'} successfully`, null, 200);
 });

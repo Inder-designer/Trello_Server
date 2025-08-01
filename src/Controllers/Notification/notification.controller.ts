@@ -9,9 +9,22 @@ import Notification from '../../models/Notification/Notification';
 // get all notifications for a user
 export const getNotifications = catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
     const user = req.user as IUser;
-    const notifications = await Notification.find({ userId: user._id })
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 5;
+    const unRead = req.query.unRead;
+    console.log(page, limit, unRead);
+
+    const filter: any = { userId: user._id };
+    if (unRead) {
+        filter.read = false;
+    }
+    const notifications = await Notification.find(filter)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
         .populate('createdBy', 'fullName initials')
         .populate('userId', 'fullName initials')
+        .populate('board.boardId', 'title background')
         .populate('card.boardId', 'title background')
         .populate({
             path: 'card.cardId',
@@ -24,7 +37,6 @@ export const getNotifications = catchAsyncErrors(async (req: Request, res: Respo
         .populate('card.comment', 'message createdAt')
         .populate('card.moved.from', 'title')
         .populate('card.moved.to', 'title')
-        .sort({ createdAt: -1 });
 
     return ResponseHandler.send(res, "Notifications fetched successfully", notifications, 200);
 });

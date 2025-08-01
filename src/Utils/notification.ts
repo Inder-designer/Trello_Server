@@ -2,7 +2,7 @@ import { Types } from "mongoose";
 import Notification from "../models/Notification/Notification";
 import { getIO } from "../config/socket";
 
-type NotificationType = "card" | "request" | "joinWithLink";
+type NotificationType = "card" | "request" | "joinWithLink" | "board";
 
 interface BaseNotificationOptions {
     type: NotificationType;
@@ -38,11 +38,19 @@ interface JoinWithLinkNotificationOptions extends BaseNotificationOptions {
         userId: Types.ObjectId;
     };
 }
+interface BoardNotificationOptions extends BaseNotificationOptions {
+    type: "board";
+    data: {
+        boardId: Types.ObjectId;
+        action: "closeBoard" | "reopenBoard";
+    };
+}
 
 type CreateNotificationInput =
     | CardNotificationOptions
     | RequestNotificationOptions
-    | JoinWithLinkNotificationOptions;
+    | JoinWithLinkNotificationOptions
+    | BoardNotificationOptions;
 
 export const createNotification = async (options: CreateNotificationInput) => {
     const { userId, type } = options;
@@ -94,11 +102,19 @@ export const createNotification = async (options: CreateNotificationInput) => {
             userId: joiningUser,
         };
     }
+    if (type === "board") {
+        const { boardId, action } = options.data;
+        payload.board = {
+            boardId,
+            action,
+        };
+    }
 
     const notificationDoc = await Notification.create(payload);
     const notification = await Notification.findById(notificationDoc._id)
         .populate('createdBy', 'fullName initials')
         .populate('userId', 'fullName initials')
+        .populate('board.boardId', 'title background')
         .populate('card.boardId', 'title background')
         .populate({
             path: 'card.cardId',
