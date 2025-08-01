@@ -24,7 +24,7 @@ export const createList = catchAsyncErrors(async (req, res, next) => {
         $push: { lists: list._id },
     });
     const io = getIO();
-    io.to(`board:${list.boardId}`).emit("listCreate", list,)
+    io.to(`board:${list.boardId}`).emit(`listCreate:${list.boardId}`, list);
 
     return ResponseHandler.send(res, "List created successfully", list, 201);
 });
@@ -49,7 +49,7 @@ export const updateList = catchAsyncErrors(async (req, res, next) => {
         { new: true, runValidators: true }
     );
     const io = getIO();
-    io.to(`board:${list.boardId}`).emit("listUpdate", updatedList,)
+    io.to(`board:${list.boardId}`).emit(`listUpdate:${list.boardId}`, updatedList);
 
     return ResponseHandler.send(res, "List updated successfully", updatedList, 201);
 })
@@ -72,10 +72,11 @@ export const deleteList = catchAsyncErrors(async (req, res, next) => {
     await Card.deleteMany({ listId })
 
     await Board.findByIdAndUpdate(boardId, {
+        $pull: { lists: list._id },
         $inc: { cardCounts: -count }
     });
     const io = getIO();
-    io.to(`board:${list.boardId}`).emit("listRemove", listId,)
+    io.to(`board:${list.boardId}`).emit(`listRemove:${list.boardId}`, { listId, cardCounts: count });
 
     return ResponseHandler.send(res, "List deleted successfully", 201);
 })

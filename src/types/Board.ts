@@ -19,4 +19,5 @@ export interface IBoard extends Document {
     updatedAt: Date;
     inviteToken?: string | null;
     inviteTokenRevokedAt?: Date | null;
+    isClosed?: boolean;
 }

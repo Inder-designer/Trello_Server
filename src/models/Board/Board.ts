@@ -21,6 +21,7 @@ const BoardSchema = new Schema<IBoard>(
         labels: [LabelSchema],
         inviteTokenRevokedAt: { type: Date, default: null },
         inviteToken: { type: String, default: null },
+        isClosed: { type: Boolean, default: false },
     },
     {
         timestamps: true,

@@ -11,10 +11,8 @@ import sendMail from '../../Utils/sendMail';
 import { IBoard } from '../../types/Board';
 import Card from '../../models/Board/Card';
 import List from '../../models/Board/List';
-import { generateBoardInviteToken, verifyBoardInviteToken } from '../../Utils/boardInviteToken';
 import { validateBoardOwnership } from '../../Utils/validateBoardOwnership';
 import { getIO } from '../../config/socket';
-import { stat } from 'fs/promises';
 
 export const inviteMember = catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
     const { boardId } = req.params;
@@ -188,9 +186,7 @@ export const updateBoard = catchAsyncErrors(async (req: Request, res: Response, 
     if (!board) {
         return next(new ErrorHandler("Board not found", 404));
     }
-    if (!board.owner.equals(user._id)) {
-        return next(new ErrorHandler("Not authorized to update this board", 403));
-    }
+    validateBoardOwnership(boardId, user, "Not authorized to update this board");
 
     const updatedBoard = await Board.findByIdAndUpdate(
         boardId,
@@ -199,9 +195,13 @@ export const updateBoard = catchAsyncErrors(async (req: Request, res: Response, 
             description,
             background,
         },
-    );
+        { new: true, runValidators: true }
+    ).populate("members", "initials fullName").populate("lists", "title");
 
-    return ResponseHandler.send(res, "Board created successfully", updatedBoard, 201);
+    const io = getIO();
+    io.to(`board:${board._id}`).emit(`boardUpdated:${board._id}`, updatedBoard);
+
+    return ResponseHandler.send(res, "Board updated successfully", updatedBoard, 200);
 })
 
 export const getAllBoards = catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
@@ -278,133 +278,58 @@ export const getBoard = catchAsyncErrors(async (req: Request, res: Response, nex
         joinRequests
     };
 
-    return ResponseHandler.send(res, "Board created successfully", boardWithCards, 201);
+    return ResponseHandler.send(res, "Board retrieved successfully", boardWithCards, 201);
 })
 
-// Generate invite token for a board (owner only)
-export const generateInviteToken = catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
+export const leaveBoard = catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
     const { boardId } = req.params;
     const user = req.user as IUser;
-    const board = await Board.findById(boardId);
-    if (!board) return next(new ErrorHandler("Board not found", 404));
-    await validateBoardOwnership(boardId, user, "Only board owner can generate invite token");
-    if (board.inviteToken && board.inviteTokenRevokedAt === null) {
-        return ResponseHandler.send(res, "Invite token already exists", { token: board.inviteToken }, 200);
-    }
-    // Use new format: <shortToken>-<slug>
-    const token = generateBoardInviteToken(boardId, board.inviteTokenRevokedAt || null, board.title);
-    board.inviteToken = token;
-    board.inviteTokenRevokedAt = null;
-    await board.save();
-    return ResponseHandler.send(res, "Invite token generated", { token }, 200);
-});
 
-// Join board with invite token
-export const joinBoardWithToken = catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
-    const { token } = req.body;
-    const user = req.user as IUser;
-    // Find the board by inviteToken
-    const board = await Board.findOne({ inviteToken: token });
-    if (!board) return next(new ErrorHandler("Invalid or expired invite token", 400));
-    if (board.inviteTokenRevokedAt) {
-        return next(new ErrorHandler("This invite token has been revoked", 400));
+    const board = await Board.findById(boardId);
+    if (!board) {
+        return next(new ErrorHandler("Board not found", 404));
     }
-    if (board.members.some((memberId: Types.ObjectId) => memberId.equals(user._id))) {
-        return next(new ErrorHandler("Already a member of this board", 400));
+    if (!board.members.some((memberId: mongoose.Types.ObjectId) => memberId.equals(user._id))) {
+        return next(new ErrorHandler("You are not a member of this board", 403));
     }
-    board.members.push(user._id);
-    user.idBoards.push(board._id);
+
+    board.members = board.members.filter((memberId: mongoose.Types.ObjectId) => !memberId.equals(user._id));
     await board.save();
+
+    user.idBoards = user.idBoards.filter((bId: mongoose.Types.ObjectId) => !bId.equals(board._id));
     await user.save();
-    return ResponseHandler.send(res, "Joined board successfully", board, 200);
-});
 
-export const deleteInviteToken = catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
-    const { boardId } = req.params;
-    const user = req.user as IUser;
-    const board = await Board.findById(boardId);
-    if (!board) return next(new ErrorHandler("Board not found", 404));
-    await validateBoardOwnership(boardId, user, "Only board owner can delete invite token");
-    board.inviteTokenRevokedAt = new Date();
-    board.inviteToken = null;
-    await board.save();
-    return ResponseHandler.send(res, "Invite token revoked/deleted", null, 200);
-});
+    await Card.updateMany({ boardId }, { $pull: { idMembers: user._id } });
 
-export const verifyInviteToken = catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
-    console.log(req.body);
-
-    const { token } = req.body;
-    const user = req.user as IUser;
-    // Find the board by inviteToken
-    const board = await Board.findOne({ inviteToken: token }).populate("owner", "fullName");
-    if (!board) return next(new ErrorHandler("Invalid or expired invite token", 400));
-    if (board.inviteTokenRevokedAt) {
-        return next(new ErrorHandler("This invite token has been revoked", 400));
-    }
-    const isMember = board.members.some((memberId: Types.ObjectId) => memberId.equals(user._id));
-    return ResponseHandler.send(res, "Invite token is valid", {
-        valid: true,
-        boardId: board._id,
-        owner: board.owner,
-        boardTitle: board.title,
-        inviteToken: board.inviteToken,
-        isMember,
-    }, 200);
-});
-
-export const requestToJoinBoard = catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
-    const { boardId } = req.body;
-    const user = req.user as IUser;
-
-    const board = await Board.findById(boardId).populate("owner", "_id name email");
-    if (!board) return next(new ErrorHandler("Board not found", 404));
-
-    if (board.members.includes(user._id)) {
-        return next(new ErrorHandler("Already a member", 400));
-    }
-    // Check for existing pending/rejected join request
-    const existingRequest = await Invitation.findOne({
-        boardId,
-        requestBy: user._id,
-        status: { $in: ["pending"] },
-    });
-    if (existingRequest) {
-        return next(new ErrorHandler("You already have a pending join request for this board", 400));
-    }
-    // Allow new request if previous was rejected or no request exists
-    const newRequest = await Invitation.create({
-        boardId,
-        requestBy: user._id,
-        status: "pending",
-    });
-    // Emit real-time notification to the board owner
     const io = getIO();
-    io.to(`board:${board._id}:owner`).emit("joinRequest", {
-        _id: newRequest._id,
-        boardId: board._id,
-        boardTitle: board.title,
-        requestBy: {
-            _id: user._id,
-            fullName: user.fullName,
-            initials: user.initials,
-            status: "pending",
-        },
-        createdAt: newRequest.createdAt,
+    io.to(`board:${board._id}`).emit(`memberLeft:${board._id}`, {
+        memberId: user._id,
+        boardId: board._id
     });
-    return ResponseHandler.send(res, "Join request sent successfully", null, 200);
+    return ResponseHandler.send(res, "Left the board successfully", null, 200);
 });
 
-export const checkJoinRequestStatus = catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
+// close/reopen board
+export const toggleBoardClosure = catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
     const { boardId } = req.params;
     const user = req.user as IUser;
-    if (!boardId) return next(new ErrorHandler("Board ID is required", 400));
-    // Find the most recent invitation for this user and board
-    const latestRequest = await Invitation.findOne({
-        boardId,
-        requestBy: user._id,
-    }).sort({ createdAt: -1 });
-    let status: string = "allowed";
-    if (latestRequest) status = latestRequest.status === "rejected" ? "allowed" : "REQUEST_ACCESS_MEMBER_LIMIT_EXCEEDED";
-    return ResponseHandler.send(res, "Join request status fetched", { status }, 200);
+
+    const board = await Board.findById(boardId);
+    if (!board) {
+        return next(new ErrorHandler("Board not found", 404));
+    }
+    if (!board.owner.equals(user._id as mongoose.Types.ObjectId)) {
+        return next(new ErrorHandler("Only board owner can close/reopen the board", 403));
+    }
+
+    board.isClosed = !board.isClosed;
+    await board.save();
+
+    const io = getIO();
+    io.to(`board:${board._id}`).emit(`boardClosureToggled:${board._id}`, {
+        isClosed: board.isClosed,
+        boardId: board._id
+    });
+
+    return ResponseHandler.send(res, `Board ${board.isClosed ? 'closed' : 'reopened'} successfully`, null, 200);
 });

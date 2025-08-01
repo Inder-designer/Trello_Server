@@ -5,14 +5,15 @@ import ErrorHandler from '../../Utils/errorhandler';
 
 const AttachmentSchema = new Schema(
     {
-        name: { type: String, required: true },
-        url: { type: String, required: true },
+        name: { type: String },
+        url: { type: String },
         type: { type: String },
     },
     { timestamps: true }
 );
 const CardSchema = new Schema<ICard>(
     {
+        shortLink: { type: String, unique: true },
         title: { type: String, required: true },
         description: { type: String, default: '' },
         priority: String,
@@ -23,7 +24,7 @@ const CardSchema = new Schema<ICard>(
         boardId: { type: mongoose.Schema.Types.ObjectId, ref: 'Board', required: true },
         idCreator: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
         attachments: [AttachmentSchema],
-        // comments: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Comment' }],
+        commentCounts: { type: Number, default: 0 },
         // activities: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Activity' }],
     },
     { timestamps: true }
@@ -48,8 +49,6 @@ CardSchema.post('findOneAndDelete', async function (
     doc,
     next: CallbackWithoutResultAndOptionalError
 ) {
-    console.log(doc);
-
     if (doc) {
         try {
             await Board.findByIdAndUpdate(

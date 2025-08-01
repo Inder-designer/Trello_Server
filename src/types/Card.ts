@@ -9,6 +9,7 @@ export interface IAttachment {
 
 export interface ICard extends Document {
   _id: Types.ObjectId;
+  shortLink: string;
   title: string;
   description: string;
   priority: string;
@@ -17,6 +18,7 @@ export interface ICard extends Document {
   boardId: Types.ObjectId;
   label: Types.ObjectId; // Ref to Board.labels._id
   idMembers: Types.ObjectId[]; // Ref to User
+  commentCounts: number;
   comments: {
     cardId: Types.ObjectId;
     userId: Types.ObjectId;

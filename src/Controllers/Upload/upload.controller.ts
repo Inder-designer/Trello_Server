@@ -15,9 +15,8 @@ export const uploadSingleImage = catchAsyncErrors(async (req: Request,
 
   if (!file) return next(new ErrorHandler("No file uploaded", 400));
 
-  const folder = req.body.folder ? `car-rental/${req.body.folder}` : "uploads";
-  console.log(folder);
-  
+  const folder = req.body.folder ? `trello/${req.body.folder}` : "trello";
+
   const oldImagePublicId = req.body.oldImagePublicId; // Get old image public ID from request
 
   // Remove old image if exists
@@ -59,7 +58,7 @@ export const uploadMultipleImages = catchAsyncErrors(async (req, res, next) => {
   }
   const { docType } = req.body
 
-  const folder = req.body.folder || "uploads"; // Default folder
+  const folder = req.body.folder ? `trello/${req.body.folder}` : "trello";
 
   const results = await Promise.all(
     files.map(
@@ -85,7 +84,7 @@ export const uploadMultipleImages = catchAsyncErrors(async (req, res, next) => {
   return ResponseHandler.send(
     res,
     "Images uploaded successfully",
-    results.map((result) => ({ url: result.secure_url, publicId: result.public_id })),
+    results.map((result) => ({ url: result.secure_url, name: `${result.display_name}.${result.format}`, type: result.format })),
     200
   );
 });

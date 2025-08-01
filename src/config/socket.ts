@@ -11,45 +11,49 @@ export const initSocket = (server: http.Server) => {
             credentials: true,
         },
     });
-    console.log("Socket.IO initialized");
+
+    console.log("✅ Socket.IO initialized");
+
     io.on("connection", (socket) => {
-        console.log("User connected", socket.id);
-
-        socket.on("joinBoardRoom", ({ boardId, userId, isOwner }) => {
-            const generalRoom = `board:${boardId}`;
-            socket.join(generalRoom);
-            console.log(`User ${userId} joined room ${generalRoom}`);
-
-            if (isOwner) {
-                const ownerRoom = `board:${boardId}:owner`;
-                socket.join(ownerRoom);
-                console.log(`Owner ${userId} also joined room ${ownerRoom}`);
-            }
+        console.log("🔌 User connected:", socket.id);
+        socket.on("joinUser", (userId: string) => {
+            socket.join(`user:${userId}`);
+            console.log(`User ${userId} joined room user:${userId}`);
         });
 
-        socket.on("leaveBoardRoom", ({ boardId, userId, isOwner }) => {
-            const generalRoom = `board:${boardId}`;
-            socket.leave(generalRoom);
-            console.log(`User ${userId} left room ${generalRoom}`);
+        socket.on("joinAllBoards", ({ ownedBoards = [], memberBoards = [], userId }: {
+            ownedBoards: string[];
+            memberBoards: string[];
+            userId: string;
+        }) => {
+            if (!userId) return;
 
-            if (isOwner) {
+            const allBoards = [...new Set([...ownedBoards, ...memberBoards])];
+
+            allBoards.forEach((boardId) => {
+                const generalRoom = `board:${boardId}`;
+                socket.join(generalRoom);
+                console.log(`➡️ User ${userId} joined room ${generalRoom}`);
+            });
+
+            ownedBoards.forEach((boardId) => {
                 const ownerRoom = `board:${boardId}:owner`;
-                socket.leave(ownerRoom);
-                console.log(`Owner ${userId} also left room ${ownerRoom}`);
-            }
+                socket.join(ownerRoom);
+                console.log(`👑 Owner ${userId} joined room ${ownerRoom}`);
+            });
         });
 
         socket.on("disconnect", () => {
-            console.log("User disconnected", socket.id);
+            console.log("❌ User disconnected:", socket.id);
         });
     });
 
     io.on("error", (error) => {
-        console.error("Socket.IO error:", error);
-    })
+        console.error("💥 Socket.IO error:", error);
+    });
 };
 
 export const getIO = () => {
-    if (!io) throw new Error("Socket.io not initialized");
+    if (!io) throw new Error("❗Socket.IO not initialized");
     return io;
 };
