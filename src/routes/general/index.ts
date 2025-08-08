@@ -6,6 +6,7 @@ import { uploadMultipleImages, uploadSingleImage } from '../../Controllers/Uploa
 import { addComment, deleteComment, reactToComment } from '../../Controllers/Board/card.controller';
 import { isAuthenticated } from '../../middleware/auth';
 import { getNotifications, markNotificationAsRead } from '../../Controllers/Notification/notification.controller';
+import { getAgoraToken } from '../../Controllers/General/general.controller';
 const router = Router();
 
 router.get('/product/:id', getProduct);
@@ -13,6 +14,7 @@ router.get('/products', getAllProduct);
 router.get('/categories', getCategories)
 router.get('/notifications', isAuthenticated, getNotifications)
 router.post('/notification/read', isAuthenticated, markNotificationAsRead)
+router.get('/agora-token', isAuthenticated, getAgoraToken);
 
 router.post('/add-comment', isAuthenticated, addComment)
 router.delete('/delete-comment', isAuthenticated, deleteComment)

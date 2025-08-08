@@ -1,7 +1,6 @@
 import express from 'express';
 import cors from 'cors';
 import routes from "./routes/index";
-import { setupSwagger } from './config/swagger/swagger';
 import cookieParser from 'cookie-parser';
 import session from 'express-session';
 import { errorMiddleware } from './middleware/errorMiddleware';
@@ -47,8 +46,5 @@ app.use(passport.session());
 
 app.use("/api", routes);
 app.use(errorMiddleware);
-
-setupSwagger(app)
-
 
 export default app;

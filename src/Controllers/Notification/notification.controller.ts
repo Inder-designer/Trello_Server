@@ -10,14 +10,18 @@ import Notification from '../../models/Notification/Notification';
 export const getNotifications = catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
     const user = req.user as IUser;
     const page = Number(req.query.page) || 1;
-    const limit = Number(req.query.limit) || 5;
-    const unRead = req.query.unRead;
-    console.log(page, limit, unRead);
+    const limit = Number(req.query.limit) || 10;
+    const unRead = req.query.unRead === 'true';
 
     const filter: any = { userId: user._id };
     if (unRead) {
         filter.read = false;
     }
+
+    // Total count for pagination
+    const totalNotifications = await Notification.countDocuments(filter);
+
+    // Fetch paginated notifications
     const notifications = await Notification.find(filter)
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
@@ -36,9 +40,20 @@ export const getNotifications = catchAsyncErrors(async (req: Request, res: Respo
         })
         .populate('card.comment', 'message createdAt')
         .populate('card.moved.from', 'title')
-        .populate('card.moved.to', 'title')
+        .populate('card.moved.to', 'title');
 
-    return ResponseHandler.send(res, "Notifications fetched successfully", notifications, 200);
+    // Prepare pagination metadata
+    const totalPages = Math.ceil(totalNotifications / limit);
+
+    return ResponseHandler.send(res, "Notifications fetched successfully", {
+        notifications,
+        pagination: {
+            total: totalNotifications,
+            page,
+            limit,
+            totalPages,
+        }
+    }, 200);
 });
 
 // mark notification as read
