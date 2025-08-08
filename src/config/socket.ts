@@ -47,6 +47,8 @@ export const initSocket = (server: http.Server) => {
             console.log("❌ User disconnected:", socket.id);
         });
     });
+    console.log("✅ Socket.IO connection handler set up");
+    
 
     io.on("error", (error) => {
         console.error("💥 Socket.IO error:", error);
