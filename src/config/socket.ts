@@ -6,7 +6,7 @@ let io: Server;
 export const initSocket = (server: http.Server) => {
     io = new Server(server, {
         cors: {
-            origin: "https://trello-f.web.app/",
+            origin: process.env.frontend_URL,
             methods: ["GET", "POST"],
             credentials: true,
         },
@@ -48,7 +48,7 @@ export const initSocket = (server: http.Server) => {
         });
     });
     console.log("✅ Socket.IO connection handler set up");
-    
+
 
     io.on("error", (error) => {
         console.error("💥 Socket.IO error:", error);
