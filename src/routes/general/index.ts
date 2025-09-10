@@ -6,7 +6,7 @@ import { uploadMultipleImages, uploadSingleImage } from '../../Controllers/Uploa
 import { addComment, deleteComment, reactToComment } from '../../Controllers/Board/card.controller';
 import { isAuthenticated } from '../../middleware/auth';
 import { getNotifications, markNotificationAsRead } from '../../Controllers/Notification/notification.controller';
-import { createMeeting, getAgoraToken, getMeetings } from '../../Controllers/General/general.controller';
+import { createMeeting, getMeetings } from '../../Controllers/General/general.controller';
 const router = Router();
 
 router.get('/product/:id', getProduct);
@@ -16,7 +16,6 @@ router.get('/notifications', isAuthenticated, getNotifications)
 router.post('/notification/read', isAuthenticated, markNotificationAsRead)
 router.post('/create-meeting', isAuthenticated, createMeeting);
 router.get('/meetings', isAuthenticated, getMeetings);
-router.get('/agora-token', isAuthenticated, getAgoraToken);
 
 router.post('/add-comment', isAuthenticated, addComment)
 router.delete('/delete-comment', isAuthenticated, deleteComment)
