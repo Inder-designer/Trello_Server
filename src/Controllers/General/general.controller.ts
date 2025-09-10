@@ -13,17 +13,17 @@ const APP_CERT = process.env.AGORA_APP_CERT || "<YOUR_APP_CERT>"; // keep secret
 export const createMeeting = catchAsyncErrors(async (req: Request, res: Response) => {
     const user = req.user as IUser
     const { title, description, scheduledAt, participants } = req.body;
-
+    const scheduledDateUTC = new Date(scheduledAt);
     const channelName = `meeting-${Date.now()}`;
 
     const meeting = await Meeting.create({
         title,
         description,
-        scheduledAt,
+        scheduledAt: scheduledDateUTC.toISOString(),
         participants,
         createdBy: user._id,
         channelName,
-        token: generateToken(channelName)
+        token: generateToken(channelName, scheduledDateUTC)
     });
 
     return ResponseHandler.send(res, "Meeting created successfully", meeting);
