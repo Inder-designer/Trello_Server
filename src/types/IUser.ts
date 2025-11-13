@@ -10,8 +10,13 @@ export interface IUser extends Document {
     userName?: string;
     idBoards: mongoose.Types.ObjectId[]; // joined boards
     ownedBoards: mongoose.Types.ObjectId[]; // boards user owns
+    
+    // Lock Panel PIN
+    lockPin?: string; // Hashed PIN
+    lockPinEnabled: boolean;
 
     comparePassword(password: string): Promise<boolean>;
     generateToken(): string;
     generateResetToken(): string;
+    compareLockPin(pin: string): Promise<boolean>;
 }

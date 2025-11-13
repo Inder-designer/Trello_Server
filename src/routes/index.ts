@@ -9,7 +9,7 @@ import { isAuthenticated } from '../middleware/auth';
 const router = Router();
 
 router.use("/auth", authRoutes);
-router.use("/user", userRoutes);
+router.use("/user", isAuthenticated, userRoutes);
 router.use("/board", isAuthenticated, boardRoutes);
 router.use("/car", carRoutes);
 router.use("/admin", adminRoutes);

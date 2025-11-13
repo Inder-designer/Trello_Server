@@ -24,7 +24,7 @@ passport.serializeUser((user: any, done) => {
 // Deserialize user from session
 passport.deserializeUser(async (id, done) => {
     try {
-        const user = await User.findById(id).select("+role");
+        const user = await User.findById({ _id: id }).select("+role");
 
         // if (user?.role === "partner") {
         //     user = await User.findById(id).populate({

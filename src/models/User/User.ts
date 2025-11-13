@@ -23,18 +23,35 @@ const UserSchema = new mongoose.Schema<IUser>(
         userName: { type: String, unique: true },
         idBoards: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Board' }],
         ownedBoards: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Board' }],
+        
+        // Lock Panel PIN
+        lockPin: { type: String },
+        lockPinEnabled: { type: Boolean, default: false },
     },
     { timestamps: true }
 );
 
 UserSchema.pre('save', async function (next) {
-    if (!this.isModified('password')) return next();
-    this.password = await bcrypt.hash(this.password, 10);
+    if (!this.isModified('password') && !this.isModified('lockPin')) return next();
+    
+    if (this.isModified('password')) {
+        this.password = await bcrypt.hash(this.password, 10);
+    }
+    
+    if (this.isModified('lockPin') && this.lockPin) {
+        this.lockPin = await bcrypt.hash(this.lockPin, 10);
+    }
+    
     next();
 });
 
 UserSchema.methods.comparePassword = function (password: string) {
     return bcrypt.compare(password, this.password);
+};
+
+UserSchema.methods.compareLockPin = function (pin: string) {
+    if (!this.lockPin) return Promise.resolve(false);
+    return bcrypt.compare(pin, this.lockPin);
 };
 
 // jwt authentication
