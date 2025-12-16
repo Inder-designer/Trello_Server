@@ -14,6 +14,13 @@ export interface IUser extends Document {
     // Lock Panel PIN
     lockPin?: string; // Hashed PIN
     lockPinEnabled: boolean;
+    
+    // Two-Factor Authentication
+    twoFactorSecret?: string; // Secret key for TOTP
+    twoFactorEnabled: boolean;
+    
+    // Single Session Management
+    sessionId?: string; // Current active session ID
 
     comparePassword(password: string): Promise<boolean>;
     generateToken(): string;

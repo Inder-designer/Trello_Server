@@ -7,6 +7,7 @@ import { errorMiddleware } from './middleware/errorMiddleware';
 import MongoStore from 'connect-mongo';
 import passport from 'passport';
 import './config/passport';
+import { validateSession } from './middleware/validateSession';
 
 const app = express();
 const isProduction = process.env.NODE_ENV === 'PROD';
@@ -43,6 +44,9 @@ app.use(session({
 
 app.use(passport.initialize());
 app.use(passport.session());
+
+// Validate session for all routes
+app.use(validateSession);
 
 app.use("/api", routes);
 app.use(errorMiddleware);

@@ -27,6 +27,13 @@ const UserSchema = new mongoose.Schema<IUser>(
         // Lock Panel PIN
         lockPin: { type: String },
         lockPinEnabled: { type: Boolean, default: false },
+        
+        // Two-Factor Authentication
+        twoFactorSecret: { type: String },
+        twoFactorEnabled: { type: Boolean, default: false },
+        
+        // Single Session Management
+        sessionId: { type: String },
     },
     { timestamps: true }
 );

@@ -1,4 +1,5 @@
 import { NextFunction, Request, Response } from 'express';
+import { Session } from 'express-session';
 import User from "../../models/User/User";
 import { catchAsyncErrors } from "../../middleware/catchAsyncErrors";
 import ErrorHandler from "../../Utils/errorhandler";
@@ -7,6 +8,12 @@ import ResponseHandler from "../../Utils/resHandler";
 import OTP from "../../models/User/OtpSchema";
 import passport, { session } from 'passport';
 import { IUser } from '../../types/IUser';
+import speakeasy from 'speakeasy';
+import { v4 as uuidv4 } from 'uuid';
+
+interface SessionWithId extends Session {
+    sessionId?: string;
+}
 
 function getInitials(fullName: string): string {
     const parts = fullName.trim().split(" ").filter(Boolean);
@@ -54,24 +61,51 @@ export const signup = catchAsyncErrors(async (req: Request, res: Response, next:
 });
 
 export const login = (req: Request, res: Response, next: NextFunction) => {
-    passport.authenticate("local", async (err: unknown, user: IUser, info: Record<string, any>) => {
+    passport.authenticate("local", async (err: unknown, user: IUser, info: Record<string, unknown>) => {
         if (err) return next(err);
         if (!user) {
             return res.status(401).json({ message: info?.message || "Login failed" });
         }
 
-        // Create a session
+        // Check if user has 2FA enabled
+        if (user.twoFactorEnabled) {
+            return res.status(200).json({
+                message: "2FA required",
+                require2FA: true,
+                userId: user._id,
+            });
+        }
+
+        // Generate new session ID and invalidate old sessions
+        const newSessionId = uuidv4();
+        user.sessionId = newSessionId;
+        await user.save();
+
+        // Create a session (only if 2FA is not enabled)
         req.logIn(user, (err) => {
             if (err) return next(err);
+
+            // Store sessionId in session
+            (req.session as SessionWithId).sessionId = newSessionId;
+
             return res.status(200).json({
                 message: "Logged in successfully",
                 user,
+                sessionId: newSessionId,
             });
         });
     })(req, res, next);
 };
 
 export const logout = (req: Request, res: Response, next: NextFunction) => {
+    // Clear sessionId from user document
+    const user = req.user as IUser;
+    if (user && user._id) {
+        User.findByIdAndUpdate(user._id, { sessionId: null }).catch((err) => {
+            console.error("Failed to clear sessionId on logout:", err);
+        });
+    }
+
     req.logout((err) => {
         if (err) {
             return next(new ErrorHandler(err, 500));
@@ -135,4 +169,52 @@ export const resetPassword = catchAsyncErrors(async (req, res, next) => {
     await user.save();
 
     return ResponseHandler.send(res, "Password reset successful", {}, 200);
+});
+
+export const verify2FALogin = catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
+    const { userId, token } = req.body;
+
+    if (!userId || !token) {
+        return next(new ErrorHandler("User ID and 2FA token are required", 400));
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+        return next(new ErrorHandler("User not found", 404));
+    }
+
+    if (!user.twoFactorEnabled || !user.twoFactorSecret) {
+        return next(new ErrorHandler("2FA is not enabled for this user", 400));
+    }
+
+    // Verify the 2FA token
+    const verified = speakeasy.totp.verify({
+        secret: user.twoFactorSecret,
+        encoding: 'base32',
+        token,
+        window: 2, // Allow 2 time steps (60 seconds) before and after
+    });
+
+    if (!verified) {
+        return next(new ErrorHandler("Invalid 2FA token", 401));
+    }
+
+    // Generate new session ID and invalidate old sessions
+    const newSessionId = uuidv4();
+    user.sessionId = newSessionId;
+    await user.save();
+
+    // Create a session after successful 2FA verification
+    req.logIn(user, (err) => {
+        if (err) return next(err);
+
+        // Store sessionId in session
+        (req.session as SessionWithId).sessionId = newSessionId;
+
+        return res.status(200).json({
+            message: "Logged in successfully",
+            user,
+            sessionId: newSessionId,
+        });
+    });
 });
