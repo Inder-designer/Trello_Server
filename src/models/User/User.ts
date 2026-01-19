@@ -23,6 +23,10 @@ const UserSchema = new mongoose.Schema<IUser>(
         userName: { type: String, unique: true },
         idBoards: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Board' }],
         ownedBoards: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Board' }],
+
+        // Presence
+        isActive: { type: Boolean, default: false },
+        last_active: { type: Date },
         
         // Lock Panel PIN
         lockPin: { type: String },

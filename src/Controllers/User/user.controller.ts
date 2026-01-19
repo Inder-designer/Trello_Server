@@ -43,13 +43,18 @@ export const registerPartner = catchAsyncErrors(async (req: Request, res: Respon
 
 // USer 
 export const getProfile = catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
-    const user = req.user;
+    const user = req.user as IUser;
 
     if (!user) {
         return next(new ErrorHandler("User not authenticated", 401));
     }
+    // set isActive and last_active
+    const updatedUser = await User.findByIdAndUpdate({ _id: user._id }, { isActive: true, last_active: new Date() }, { new: true });
+    if (updatedUser) {
+        req.user = updatedUser;
+    }
 
-    ResponseHandler.send(res, "Profile fetched successfully", user);
+    ResponseHandler.send(res, "Profile fetched successfully", updatedUser);
     return
 })
 

@@ -40,7 +40,10 @@ export const getNotifications = catchAsyncErrors(async (req: Request, res: Respo
         })
         .populate('card.comment', 'message createdAt')
         .populate('card.moved.from', 'title')
-        .populate('card.moved.to', 'title');
+        .populate('card.moved.to', 'title')
+        .populate('addedToBoard.boardId', 'title background')
+        .populate('addedToBoard.addedBy', 'fullName initials')
+        .populate('addedToBoard.memberAdded', 'fullName initials');
 
     // Prepare pagination metadata
     const totalPages = Math.ceil(totalNotifications / limit);

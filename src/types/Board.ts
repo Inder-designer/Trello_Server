@@ -7,6 +7,7 @@ export interface ILabel {
 }
 export interface IBoard extends Document {
     _id: Types.ObjectId;
+    workspace: Types.ObjectId;
     title: string;
     description?: string;
     background?: string;

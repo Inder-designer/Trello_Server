@@ -7,9 +7,8 @@ import Comment from "../../models/Board/Comment";
 import { IUser } from "../../types/IUser";
 import ErrorHandler from "../../Utils/errorhandler";
 import ResponseHandler from "../../Utils/resHandler";
-import { validateBoardOwnership } from "../../Utils/validateBoardOwnership";
-import { logActivityHelper } from "../../Utils/logActivity";
-import { getIO } from "../../config/socket";
+import { validateBoardOwnership } from "../../Utils/validateOwnership";
+import { emitToWorkspace, emitToWorkspaceByBoard } from "../../Utils/socketEmitter";
 import { createNotification } from "../../Utils/notification";
 import { generateShortLink } from "../../Utils/shortLinkGenerator";
 
@@ -21,7 +20,7 @@ export const createCard = catchAsyncErrors(async (req, res, next) => {
         return next(new ErrorHandler("Title, listId, and boardId are required", 400));
     }
 
-    await validateBoardOwnership(boardId.toString(), user, "Not authorized to create card")
+    const board = await validateBoardOwnership(boardId.toString(), user, "Not authorized to create card")
 
     let card = await Card.create({
         title,
@@ -38,10 +37,9 @@ export const createCard = catchAsyncErrors(async (req, res, next) => {
     const shortLink = await generateShortLink({ cardId: card._id.toString() });
     card.shortLink = shortLink;
     card = await card.populate("idMembers", "fullName initials");
-    const io = getIO();
-    io.to(`board:${card.boardId}`).emit(`cardCreate:${card.boardId}`, card)
+    emitToWorkspace(board.workspace, `cardCreate:${card.boardId}`, card)
 
-    for (const memberId of idMembers) {
+    for (const memberId of (idMembers ?? [])) {
         if (memberId.toString() !== user._id.toString()) {
             await createNotification({
                 type: "card",
@@ -65,7 +63,7 @@ export const updateCard = catchAsyncErrors(async (req, res, next) => {
     const { cardId } = req.params;
     const { title, description, boardId, dueDate, labels, attachments, idMembers = [], priority } = req.body;
 
-    await validateBoardOwnership(boardId.toString(), user, "Not authorized to update card");
+    const board = await validateBoardOwnership(boardId.toString(), user, "Not authorized to update card");
 
     // 1. Get the previous version of the card
     const prevCard = await Card.findById(cardId);
@@ -74,7 +72,7 @@ export const updateCard = catchAsyncErrors(async (req, res, next) => {
     }
 
     const prevMembers = prevCard.idMembers.map(_id => _id.toString());
-    const newMembers = idMembers.map((_id: any) => _id.toString());
+    const newMembers = idMembers.map((_id: Types.ObjectId) => _id.toString());
 
     const addedMembers: string[] = newMembers.filter((_id: string) => !prevMembers.includes(_id));
     const removedMembers = prevMembers.filter(_id => !newMembers.includes(_id));
@@ -100,8 +98,7 @@ export const updateCard = catchAsyncErrors(async (req, res, next) => {
     if (!updatedCard) {
         return next(new ErrorHandler("Card not found after update", 404));
     }
-    const io = getIO();
-    io.to(`board:${updatedCard.boardId}`).emit(`cardUpdated:${updatedCard.boardId}`, updatedCard);
+    emitToWorkspace(board.workspace, `cardUpdated:${updatedCard.boardId}`, updatedCard);
 
     for (const memberId of addedMembers) {
         await createNotification({
@@ -146,17 +143,19 @@ export const moveCard = catchAsyncErrors(async (req, res, next) => {
 
     const fromListId = card.listId;
 
-    await Card.findByIdAndUpdate(
+    const updatedCard = await Card.findByIdAndUpdate(
         cardId,
         {
             listId
         },
         { new: true, runValidators: true }
-    );
+    ).populate("idMembers", "fullName initials");
 
-    const targetUserIds = (card.idMembers || [])
+    const targetUserIds: mongoose.Types.ObjectId[] = (card.idMembers || [])
         .filter((memberId: mongoose.Types.ObjectId) => !memberId.equals(user._id));
-
+    if (user._id.toString() !== card.idCreator.toString()) {
+        targetUserIds.push(card.idCreator as mongoose.Types.ObjectId);
+    }
     await Promise.all(
         targetUserIds.map((targetUserId: mongoose.Types.ObjectId) =>
             createNotification({
@@ -174,14 +173,11 @@ export const moveCard = catchAsyncErrors(async (req, res, next) => {
         )
     );
 
-    const io = getIO();
-    io.to(`board:${card.boardId}`).emit(`cardMoved:${card.boardId}`, {
+    await emitToWorkspaceByBoard(card.boardId as Types.ObjectId, `cardMoved:${card.boardId}`, {
         cardId,
         fromListId,
         toListId: listId,
-    })
-    const updatedCard = await Card.findById(cardId).populate("idMembers", "fullName initials");
-
+    });
     return ResponseHandler.send(res, "Card update successfully", updatedCard, 201);
 });
 
@@ -194,12 +190,11 @@ export const removeCard = catchAsyncErrors(async (req, res, next) => {
         return next(new ErrorHandler("Card not found", 404));
     }
     const boardId = card.boardId
-    await validateBoardOwnership(boardId.toString(), user, "Not authorized to create card")
+    const board = await validateBoardOwnership(boardId.toString(), user, "Not authorized to create card")
 
     await Card.findOneAndDelete({ _id: cardId })
 
-    const io = getIO();
-    io.to(`board:${card.boardId}`).emit(`cardRemoved:${card.boardId}`, { cardId, listId: card.listId })
+    emitToWorkspace(board.workspace, `cardRemoved:${board._id}`, { cardId, listId: card.listId })
 
     return ResponseHandler.send(res, "Card deleted successfully", 201);
 })
@@ -275,8 +270,7 @@ export const addComment = catchAsyncErrors(async (req, res, next) => {
         )
     );
 
-    const io = getIO();
-    io.to(`board:${card.boardId}`).emit(`commentAdded:${card.boardId}`, { card, comment });
+    await emitToWorkspaceByBoard(card.boardId as Types.ObjectId, `commentAdded:${card.boardId}`, { card, comment });
 
     return ResponseHandler.send(res, "Comment added", comment, 201);
 });
@@ -295,8 +289,7 @@ export const deleteComment = catchAsyncErrors(async (req, res, next) => {
 
     await Comment.findByIdAndDelete(commentId);
 
-    const io = getIO();
-    io.to(`board:${comment.boardId}`).emit(`commentDeleted:${comment.boardId}`, comment);
+    await emitToWorkspaceByBoard(comment.boardId as Types.ObjectId, `commentDeleted:${comment.boardId}`, comment);
 
     return ResponseHandler.send(res, "Comment deleted successfully", {}, 200);
 });
@@ -353,8 +346,7 @@ export const reactToComment = catchAsyncErrors(
         await comment.save();
         await comment.populate('reactions.userIds', 'fullName initials');
 
-        const io = getIO();
-        io.to(`board:${comment.boardId}`).emit(`commentReacted:${comment.boardId}`, comment);
+        await emitToWorkspaceByBoard(comment.boardId as Types.ObjectId, `commentReacted:${comment.boardId}`, comment);
 
         return ResponseHandler.send(res, "Reaction updated", comment, 200);
     }

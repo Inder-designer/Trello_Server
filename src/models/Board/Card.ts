@@ -30,6 +30,12 @@ const CardSchema = new Schema<ICard>(
     { timestamps: true }
 );
 
+// indexes
+CardSchema.index({ boardId: 1 });
+CardSchema.index({ listId: 1 });
+CardSchema.index({ idMembers: 1 });
+CardSchema.index({ shortLink: 1 });
+
 CardSchema.pre('save', async function (this: ICard, next: CallbackWithoutResultAndOptionalError) {
     try {
         const board = await Board.findByIdAndUpdate(

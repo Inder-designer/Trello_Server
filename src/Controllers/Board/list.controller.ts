@@ -1,4 +1,4 @@
-import { getIO } from "../../config/socket";
+import { emitToWorkspace } from "../../Utils/socketEmitter";
 import { catchAsyncErrors } from "../../middleware/catchAsyncErrors";
 import Board from "../../models/Board/Board";
 import Card from "../../models/Board/Card";
@@ -6,7 +6,7 @@ import List from "../../models/Board/List";
 import { IUser } from "../../types/IUser";
 import ErrorHandler from "../../Utils/errorhandler";
 import ResponseHandler from "../../Utils/resHandler";
-import { validateBoardOwnership } from "../../Utils/validateBoardOwnership";
+import { validateBoardOwnership } from "../../Utils/validateOwnership";
 
 export const createList = catchAsyncErrors(async (req, res, next) => {
     const { title, boardId, order } = req.body;
@@ -16,15 +16,14 @@ export const createList = catchAsyncErrors(async (req, res, next) => {
         return next(new ErrorHandler("Title and boardId are required", 400));
     }
 
-    await validateBoardOwnership(boardId, user, "Not authorized to create list")
+    const board = await validateBoardOwnership(boardId, user, "Not authorized to create list")
 
     const list = await List.create({ title, boardId, order: order || 0, cards: [] });
 
     await Board.findByIdAndUpdate(boardId, {
         $push: { lists: list._id },
     });
-    const io = getIO();
-    io.to(`board:${list.boardId}`).emit(`listCreate:${list.boardId}`, list);
+    emitToWorkspace(board.workspace, `listCreate:${boardId}`, list);
 
     return ResponseHandler.send(res, "List created successfully", list, 201);
 });
@@ -36,10 +35,10 @@ export const updateList = catchAsyncErrors(async (req, res, next) => {
 
     const list = await List.findById(listId);
     if (!list) {
-        return next(new ErrorHandler("Card not found", 404));
+        return next(new ErrorHandler("List not found", 404));
     }
     const boardId = list.boardId
-    await validateBoardOwnership(boardId.toString(), user, "Not authorized to update list")
+    const board = await validateBoardOwnership(boardId.toString(), user, "Not authorized to update list")
 
     const updatedList = await List.findByIdAndUpdate(
         listId,
@@ -48,8 +47,7 @@ export const updateList = catchAsyncErrors(async (req, res, next) => {
         },
         { new: true, runValidators: true }
     );
-    const io = getIO();
-    io.to(`board:${list.boardId}`).emit(`listUpdate:${list.boardId}`, updatedList);
+    emitToWorkspace(board.workspace, `listUpdate:${list.boardId}`, updatedList);
 
     return ResponseHandler.send(res, "List updated successfully", updatedList, 201);
 })
@@ -60,23 +58,20 @@ export const deleteList = catchAsyncErrors(async (req, res, next) => {
 
     const list = await List.findById(listId);
     if (!list) {
-        return next(new ErrorHandler("Card not found", 404));
+        return next(new ErrorHandler("List not found", 404));
     }
     const boardId = list.boardId
-    await validateBoardOwnership(boardId.toString(), user, "Not authorized to update list")
-
-    const cards = await Card.find({ listId });
-    const count = cards.length;
+    const board = await validateBoardOwnership(boardId.toString(), user, "Not authorized to delete list")
 
     await List.findByIdAndDelete(listId)
-    await Card.deleteMany({ listId })
+    const result = await Card.deleteMany({ listId })
+    const count = result.deletedCount;
 
     await Board.findByIdAndUpdate(boardId, {
         $pull: { lists: list._id },
         $inc: { cardCounts: -count }
     });
-    const io = getIO();
-    io.to(`board:${list.boardId}`).emit(`listRemove:${list.boardId}`, { listId, cardCounts: count });
+    emitToWorkspace(board.workspace, `listRemove:${list.boardId}`, { listId, cardCounts: count });
 
     return ResponseHandler.send(res, "List deleted successfully", 201);
 })

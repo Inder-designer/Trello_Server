@@ -2,7 +2,7 @@ import { Types } from "mongoose";
 import Notification from "../models/Notification/Notification";
 import { getIO } from "../config/socket";
 
-type NotificationType = "card" | "request" | "joinWithLink" | "board";
+type NotificationType = "card" | "request" | "joinWithLink" | "board" | "addedToBoard";
 
 interface BaseNotificationOptions {
     type: NotificationType;
@@ -45,20 +45,31 @@ interface BoardNotificationOptions extends BaseNotificationOptions {
         action: "closeBoard" | "reopenBoard";
     };
 }
+interface AddedToBoardNotificationOptions extends BaseNotificationOptions {
+    type: "addedToBoard";
+    data: {
+        boardId: Types.ObjectId;
+        addedBy: Types.ObjectId;
+        memberAdded: Types.ObjectId;
+    };
+}
 
 type CreateNotificationInput =
     | CardNotificationOptions
     | RequestNotificationOptions
     | JoinWithLinkNotificationOptions
-    | BoardNotificationOptions;
+    | BoardNotificationOptions
+    | AddedToBoardNotificationOptions;
 
 export const createNotification = async (options: CreateNotificationInput) => {
-    const { userId, type } = options;
-    let payload: any = {
+    const { userId, type, createdBy } = options;
+    const payload: any = {
         userId,
         type,
-        createdBy: options.createdBy
+        createdBy: createdBy || userId,
     };
+    console.log(type);
+
 
     if (type === "card") {
         const { cardId, boardId, action, commentId, fromListId, toListId, userIdForAction } = options.data;
@@ -109,6 +120,14 @@ export const createNotification = async (options: CreateNotificationInput) => {
             action,
         };
     }
+    if (type === "addedToBoard") {
+        const { boardId, addedBy, memberAdded } = options.data;
+        payload.addedToBoard = {
+            boardId,
+            addedBy,
+            memberAdded,
+        };
+    }
 
     const notificationDoc = await Notification.create(payload);
     const notification = await Notification.findById(notificationDoc._id)
@@ -127,6 +146,10 @@ export const createNotification = async (options: CreateNotificationInput) => {
         .populate('card.comment', 'message createdAt')
         .populate('card.moved.from', 'title')
         .populate('card.moved.to', 'title')
+        .populate('addedToBoard.boardId', 'title background')
+        .populate('addedToBoard.addedBy', 'fullName initials')
+        .populate('addedToBoard.memberAdded', 'fullName initials')
+        .lean();
 
     // Emit to user's personal room
     const io = getIO();

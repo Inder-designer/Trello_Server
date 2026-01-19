@@ -22,6 +22,10 @@ export interface IUser extends Document {
     // Single Session Management
     sessionId?: string; // Current active session ID
 
+    // Presence
+    isActive?: boolean;
+    last_active?: Date;
+
     comparePassword(password: string): Promise<boolean>;
     generateToken(): string;
     generateResetToken(): string;

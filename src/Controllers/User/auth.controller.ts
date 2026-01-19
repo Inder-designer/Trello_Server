@@ -79,6 +79,8 @@ export const login = (req: Request, res: Response, next: NextFunction) => {
         // Generate new session ID and invalidate old sessions
         const newSessionId = uuidv4();
         user.sessionId = newSessionId;
+        user.isActive = true;
+        user.last_active = new Date();
         await user.save();
 
         // Create a session (only if 2FA is not enabled)
@@ -101,7 +103,7 @@ export const logout = (req: Request, res: Response, next: NextFunction) => {
     // Clear sessionId from user document
     const user = req.user as IUser;
     if (user && user._id) {
-        User.findByIdAndUpdate(user._id, { sessionId: null }).catch((err) => {
+        User.findByIdAndUpdate(user._id, { sessionId: null, isActive: false, last_active: new Date() }).catch((err) => {
             console.error("Failed to clear sessionId on logout:", err);
         });
     }
@@ -202,6 +204,8 @@ export const verify2FALogin = catchAsyncErrors(async (req: Request, res: Respons
     // Generate new session ID and invalidate old sessions
     const newSessionId = uuidv4();
     user.sessionId = newSessionId;
+    user.isActive = true;
+    user.last_active = new Date();
     await user.save();
 
     // Create a session after successful 2FA verification

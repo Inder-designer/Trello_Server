@@ -11,9 +11,12 @@ import sendMail from '../../Utils/sendMail';
 import { IBoard } from '../../types/Board';
 import Card from '../../models/Board/Card';
 import List from '../../models/Board/List';
-import { validateBoardOwnership } from '../../Utils/validateBoardOwnership';
-import { getIO } from '../../config/socket';
+import { validateBoardMembership, validateBoardOwnership } from '../../Utils/validateOwnership';
+
 import { createNotification } from '../../Utils/notification';
+import Workspace from '../../models/Workspace/Workspace';
+import { removeUserFromBoard } from '../../Utils/removeUserFromBoard';
+import { emitToWorkspace } from '../../Utils/socketEmitter';
 
 export const inviteMember = catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
     const { boardId } = req.params;
@@ -22,7 +25,6 @@ export const inviteMember = catchAsyncErrors(async (req: Request, res: Response,
     const userId = user._id;
 
     const board = await Board.findById(boardId).populate("members", "email");
-    console.log(board);
 
     if (!board) return next(new ErrorHandler("Board not found", 404));
 
@@ -75,7 +77,6 @@ export const inviteMember = catchAsyncErrors(async (req: Request, res: Response,
 export const acceptInvitation = catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
     const { boardId } = req.params;
     const user = req.user as IUser;
-    console.log();
 
     const invite = await Invitation.findOne({
         boardId,
@@ -104,11 +105,22 @@ export const acceptInvitation = catchAsyncErrors(async (req: Request, res: Respo
 });
 
 export const createBoard = catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
-    const { title, description, background } = req.body;
+    const { title, description, background, workspace } = req.body;
     const user = req.user as IUser
 
     if (!title) {
         return next(new ErrorHandler("Title is required", 400));
+    }
+    let workspaceId = workspace;
+    if (!workspace) {
+        // create new workspace if not provided
+        const newWorkspace = await Workspace.create({
+            title: `${user.fullName} Workspace`,
+            description: description || "",
+            owner: user._id,
+            members: [user._id],
+        });
+        workspaceId = newWorkspace._id;
     }
 
     // Create board
@@ -120,6 +132,7 @@ export const createBoard = catchAsyncErrors(async (req: Request, res: Response, 
         members: [user._id], // owner is also a member
         lists: [],
         labels: [],
+        workspace: workspaceId,
     });
 
     // Update user document
@@ -127,6 +140,11 @@ export const createBoard = catchAsyncErrors(async (req: Request, res: Response, 
         $push: {
             ownedBoards: newBoard._id,
             idBoards: newBoard._id,
+        },
+    });
+    await Workspace.findByIdAndUpdate(workspaceId, {
+        $push: {
+            boards: newBoard._id,
         },
     });
 
@@ -159,17 +177,18 @@ export const deleteBoard = catchAsyncErrors(async (req: Request, res: Response, 
             { session }
         );
 
+        await Workspace.findByIdAndUpdate(
+            board.workspace,
+            { $pull: { boards: board._id } },
+            { session }
+        );
 
         await List.deleteMany({ boardId: board._id }).session(session);
         await Card.deleteMany({ boardId: board._id }).session(session);
 
         await board.deleteOne({ session });
-        console.log("pending:", session);
-
         await session.commitTransaction();
         session.endSession();
-        console.log("end:", session);
-
         return ResponseHandler.send(res, "Board deleted successfully", null, 200);
     } catch (err) {
         await session.abortTransaction();
@@ -179,28 +198,67 @@ export const deleteBoard = catchAsyncErrors(async (req: Request, res: Response, 
 });
 
 export const updateBoard = catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
-    const { title, description, background } = req.body;
+    const { title, description, background, members
+    } = req.body;
     const { boardId } = req.params;
     const user = req.user as IUser;
 
-    const board = await Board.findById(boardId);
-    if (!board) {
-        return next(new ErrorHandler("Board not found", 404));
-    }
-    validateBoardOwnership(boardId, user, "Not authorized to update this board");
+    const board = await validateBoardOwnership(boardId, user, "Not authorized to update this board");
+    const updateData: Partial<typeof board> = {};
 
+    if (title !== undefined) updateData.title = title;
+    if (description !== undefined) updateData.description = description;
+    if (background !== undefined) updateData.background = background;
+    if (members !== undefined) updateData.members = members;
     const updatedBoard = await Board.findByIdAndUpdate(
         boardId,
-        {
-            title,
-            description,
-            background,
-        },
+        updateData,
         { new: true, runValidators: true }
-    ).populate("members", "initials fullName").populate("lists", "title");
+    ).populate("lists", "title")
+        .populate("members", "initials fullName email");
+    let membersToAdd: string[] = [];
+    let membersToRemove: string[] = [];
 
-    const io = getIO();
-    io.to(`board:${board._id}`).emit(`boardUpdated:${board._id}`, updatedBoard);
+    if (members) {
+        const previousMembers = board.members.map(String);
+        const newMembers = members.map(String);
+
+        membersToAdd = newMembers.filter(
+            (id: string) => !previousMembers.includes(id)
+        );
+
+        membersToRemove = previousMembers.filter(
+            (id) => !newMembers.includes(id)
+        );
+        await Promise.all([
+            User.updateMany(
+                { _id: { $in: membersToAdd } },
+                { $addToSet: { idBoards: boardId } }
+            ),
+            User.updateMany(
+                { _id: { $in: membersToRemove } },
+                { $pull: { idBoards: boardId } }
+            ),
+        ]);
+        console.log(membersToAdd);
+    }
+
+
+    emitToWorkspace(board.workspace, `boardUpdated:${boardId}`, updatedBoard);
+    await Promise.all(
+        membersToAdd.map((memberId) =>
+            createNotification({
+                createdBy: user._id,
+                userId: new Types.ObjectId(memberId),
+                type: "addedToBoard",
+                data: {
+                    addedBy: user._id,
+                    boardId: board._id,
+                    memberAdded: new Types.ObjectId(memberId),
+                }
+            })
+        )
+    );
 
     return ResponseHandler.send(res, "Board updated successfully", updatedBoard, 200);
 })
@@ -228,8 +286,67 @@ export const getAllBoards = catchAsyncErrors(async (req: Request, res: Response,
             isOwned: false,
         }));
 
-    // const boards = [...ownedBoards, ...memberBoards];
-    return ResponseHandler.send(res, "All Boards", { ownedBoards, memberBoards }, 201);
+    // Fetch workspaces: owned by user
+    const myWorkspaces = await Workspace.find({ owner: user._id })
+        .populate({
+            path: 'boards',
+            populate: [
+                { path: 'owner', select: 'fullName initials' }
+            ]
+        })
+        .populate('members', 'initials fullName')
+        .lean();
+
+    // Fetch workspaces where user is a member but not the owner
+    const guestWorkspaces = await Workspace.find({ members: user._id, owner: { $ne: user._id } })
+        .populate({
+            path: 'boards',
+            populate: [
+                { path: 'owner', select: 'fullName initials' }
+            ]
+        })
+        .populate('members', 'initials fullName')
+        .lean();
+
+    const getOwnerId = (owner: any) => {
+        if (!owner) return null;
+        if (typeof owner === 'string') return owner;
+        if (owner._id) return owner._id.toString();
+        return owner.toString();
+    };
+
+    const markBoardOwnership = (boards: any[] = [], forceOwned = false) =>
+        boards.map(b => ({
+            ...b,
+            isOwned: forceOwned ? true : (b.owner ? getOwnerId(b.owner) === user._id.toString() : false),
+        }));
+
+    const myWorkspacesWithBoards = (myWorkspaces || []).map(ws => ({
+        ...ws,
+        isOwned: true,
+        boards: markBoardOwnership(ws.boards || [], true),
+    }));
+
+    const guestWorkspacesWithBoards = (guestWorkspaces || []).map(ws => ({
+        ...ws,
+        isOwned: getOwnerId(ws.owner) === user._id.toString(),
+        boards: markBoardOwnership(
+            (ws.boards || []).filter((board: any) =>
+                board.members?.some((memberId: any) => memberId.toString() === user._id.toString()) ||
+                getOwnerId(board.owner) === user._id.toString()
+            ),
+            false
+        ),
+    }));
+
+    return ResponseHandler.send(res, "All Boards", {
+        ownedBoards,
+        memberBoards,
+        workspaces: {
+            myWorkspaces: myWorkspacesWithBoards,
+            guestWorkspaces: guestWorkspacesWithBoards,
+        }
+    }, 200);
 })
 
 export const getBoard = catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
@@ -285,29 +402,33 @@ export const getBoard = catchAsyncErrors(async (req: Request, res: Response, nex
 export const leaveBoard = catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
     const { boardId } = req.params;
     const user = req.user as IUser;
+    const board = await validateBoardMembership(boardId, user, "You are not a member of this board");
 
-    const board = await Board.findById(boardId);
-    if (!board) {
-        return next(new ErrorHandler("Board not found", 404));
-    }
-    if (!board.members.some((memberId: mongoose.Types.ObjectId) => memberId.equals(user._id))) {
-        return next(new ErrorHandler("You are not a member of this board", 403));
-    }
+    await removeUserFromBoard(user._id, board);
 
-    board.members = board.members.filter((memberId: mongoose.Types.ObjectId) => !memberId.equals(user._id));
-    await board.save();
-
-    user.idBoards = user.idBoards.filter((bId: mongoose.Types.ObjectId) => !bId.equals(board._id));
-    await user.save();
-
-    await Card.updateMany({ boardId }, { $pull: { idMembers: user._id } });
-
-    const io = getIO();
-    io.to(`board:${board._id}`).emit(`memberLeft:${board._id}`, {
+    emitToWorkspace(board.workspace, `memberLeft:${board._id}`, {
         memberId: user._id,
-        boardId: board._id
+        boardId: board._id,
+        workspaceId: board.workspace
     });
     return ResponseHandler.send(res, "Left the board successfully", null, 200);
+});
+
+export const removeFromBoard = catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
+    const { boardId } = req.params;
+    const { memberId } = req.body;
+    const user = req.user as IUser;
+
+    const board = await validateBoardOwnership(boardId, user, "Not authorized to remove members from this board");
+
+    await removeUserFromBoard(memberId, board);
+
+    emitToWorkspace(board.workspace, `memberRemoved:${board._id}`, {
+        memberId: memberId,
+        boardId: board._id,
+        workspaceId: board.workspace
+    });
+    return ResponseHandler.send(res, "Member removed from board successfully", null, 200);
 });
 
 // close/reopen board
@@ -315,21 +436,15 @@ export const toggleBoardClosure = catchAsyncErrors(async (req: Request, res: Res
     const { boardId } = req.params;
     const user = req.user as IUser;
 
-    const board = await Board.findById(boardId);
-    if (!board) {
-        return next(new ErrorHandler("Board not found", 404));
-    }
-    if (!board.owner.equals(user._id as mongoose.Types.ObjectId)) {
-        return next(new ErrorHandler("Only board owner can close/reopen the board", 403));
-    }
+    const board = await validateBoardOwnership(boardId, user, "Only board owner can close/reopen the board");
 
     board.isClosed = !board.isClosed;
     await board.save();
 
-    const io = getIO();
-    io.to(`board:${board._id}`).emit(`boardClosureToggled:${board._id}`, {
+    emitToWorkspace(board.workspace, `boardClosureToggled:${board._id}`, {
         isClosed: board.isClosed,
-        boardId: board._id
+        boardId: board._id,
+        workspaceId: board.workspace
     });
     // Optionally, you can also send a notification to the ALL board members
     const targetUserIds = (board.members || [])

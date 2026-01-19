@@ -6,7 +6,7 @@ const NotificationSchema = new Schema(
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     type: {
       type: String,
-      enum: ['card', 'request', 'joinWithLink', 'board'],
+      enum: ['card', 'request', 'joinWithLink', 'addedToBoard', 'board'],
       required: true
     },
     request: {
@@ -40,6 +40,11 @@ const NotificationSchema = new Schema(
       boardId: { type: Schema.Types.ObjectId, ref: 'Board' },
       action: { type: String, enum: ['closeBoard', 'reopenBoard'] }
     },
+    addedToBoard: {
+      boardId: { type: Schema.Types.ObjectId, ref: 'Board' },
+      addedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+      memberAdded: { type: Schema.Types.ObjectId, ref: 'User' }
+    },
     read: { type: Boolean, default: false }
   },
   { timestamps: true }
@@ -53,18 +58,27 @@ NotificationSchema.pre('validate', function (next) {
     doc.card = undefined;
     doc.joinWithLink = undefined;
     doc.board = undefined;
+    doc.addedToBoard = undefined;
   } else if (doc.type === 'card') {
     doc.request = undefined;
     doc.joinWithLink = undefined;
     doc.board = undefined;
+    doc.addedToBoard = undefined;
   } else if (doc.type === 'joinWithLink') {
     doc.card = undefined;
     doc.request = undefined;
     doc.board = undefined;
+    doc.addedToBoard = undefined;
   } else if (doc.type === 'board') {
     doc.card = undefined;
     doc.request = undefined;
     doc.joinWithLink = undefined;
+    doc.addedToBoard = undefined;
+  } else if (doc.type === 'addedToBoard') {
+    doc.card = undefined;
+    doc.request = undefined;
+    doc.joinWithLink = undefined;
+    doc.board = undefined;
   }
 
   next();

@@ -14,3 +14,12 @@ export function verifyBoardInviteToken(token: string): { boardId: string, invite
   // For now, just return null (actual verification will be handled in the controller)
   return null;
 }
+
+export function generateWorkspaceInviteToken(workspaceId: string) {
+  // Generate a short random string with combination of workspaceId
+  const shortToken = crypto.randomBytes(8).toString("base64url");
+  // Slugify the workspaceId (replace spaces and special chars)
+  const slug = workspaceId.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  // Format: <shortToken>-<slug>
+  return `${shortToken}-${slug}`;
+}

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { acceptInvitation, createBoard, deleteBoard, getAllBoards, getBoard, inviteMember, updateBoard, leaveBoard, toggleBoardClosure } from '../../Controllers/Board/board.controller';
+import { acceptInvitation, createBoard, deleteBoard, getAllBoards, getBoard, inviteMember, updateBoard, leaveBoard, toggleBoardClosure, removeFromBoard } from '../../Controllers/Board/board.controller';
 import { createList, deleteList, updateList } from '../../Controllers/Board/list.controller';
 import { createCard, getCardById, getCards, moveCard, removeCard, updateCard } from '../../Controllers/Board/card.controller';
 import { checkJoinRequestStatus, deleteInviteToken, generateInviteToken, joinBoardWithToken, requestToJoinBoard, respondToJoinRequest, verifyInviteToken } from '../../Controllers/Board/join.controller';
@@ -13,6 +13,7 @@ router.get('/:boardId', getBoard);
 router.delete('/:boardId', deleteBoard);
 router.put('/:boardId', toggleBoardClosure)
 router.post('/leave/:boardId', leaveBoard);
+router.delete('/:boardId/remove-member', removeFromBoard)
 
 // List
 router.post('/add-list', createList);

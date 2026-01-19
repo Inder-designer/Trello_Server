@@ -3,7 +3,7 @@ import { catchAsyncErrors } from "../../middleware/catchAsyncErrors";
 import Board from "../../models/Board/Board";
 import { IUser } from "../../types/IUser";
 import ErrorHandler from '../../Utils/errorhandler';
-import { validateBoardOwnership } from '../../Utils/validateBoardOwnership';
+import { validateBoardOwnership } from '../../Utils/validateOwnership';
 import ResponseHandler from '../../Utils/resHandler';
 import { generateBoardInviteToken } from '../../Utils/boardInviteToken';
 import { Types } from 'mongoose';
@@ -152,9 +152,7 @@ export const respondToJoinRequest = catchAsyncErrors(async (req: Request, res: R
     if (!request) return next(new ErrorHandler("Join request not found", 404));
     const requestBy = await User.findById(request.requestBy);
     if (!requestBy) return next(new ErrorHandler("Requesting user not found", 404));
-    const board = await Board.findOne({ _id: request.boardId._id });
-    if (!board) return next(new ErrorHandler("Board not found", 404));
-    validateBoardOwnership(request.boardId._id.toString(), user, "Not authorized to respond to this join request");
+    const board = await validateBoardOwnership(request.boardId._id.toString(), user, "Not authorized to respond to this join request");
     if (request.status !== "pending") {
         return next(new ErrorHandler("Join request is not pending", 400));
     }
@@ -169,7 +167,6 @@ export const respondToJoinRequest = catchAsyncErrors(async (req: Request, res: R
     } else if (action === "reject") {
         request.status = "rejected";
     }
-    console.log(user);
 
     await request.save();
     // Emit real-time notification
