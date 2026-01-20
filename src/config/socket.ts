@@ -13,7 +13,10 @@ const userWorkspaces = new Map<string, Set<string>>();
 export const initSocket = (server: http.Server) => {
     io = new Server(server, {
         cors: {
-            origin: process.env.frontend_URL,
+            // origin: process.env.frontend_URL,
+            origin: (origin, callback) => {
+                callback(null, true)
+            },
             methods: ["GET", "POST"],
             credentials: true,
         },
@@ -26,7 +29,7 @@ export const initSocket = (server: http.Server) => {
 
         socket.on("joinUser", (userId: string) => {
             socket.join(`user:${userId}`);
-            
+
             // Track user connection
             if (!connectedUsers.has(userId)) {
                 connectedUsers.set(userId, new Set());
@@ -36,45 +39,23 @@ export const initSocket = (server: http.Server) => {
             User.findByIdAndUpdate(userId, { isActive: true, last_active: new Date() }).catch((err) => {
                 console.error("Failed to set user active:", err);
             });
-            
+
             console.log(`User ${userId} joined room user:${userId}`);
         });
 
         socket.on("joinWorkspace", ({ workspaceId, userId }: { workspaceId: string; userId: string }) => {
             socket.join(`workspace:${workspaceId}`);
-            
+
             // Track user's workspace membership
             if (!userWorkspaces.has(userId)) {
                 userWorkspaces.set(userId, new Set());
             }
             userWorkspaces.get(userId)?.add(workspaceId);
-            
+
             // Emit memberOnline event to workspace
             io.to(`workspace:${workspaceId}`).emit('memberOnline', { userId, workspaceId });
-            
+
             console.log(`➡️ User ${userId} joined room workspace:${workspaceId}`);
-        });
-
-        socket.on("joinAllBoards", ({ ownedBoards = [], memberBoards = [], userId }: {
-            ownedBoards: string[];
-            memberBoards: string[];
-            userId: string;
-        }) => {
-            if (!userId) return;
-
-            const allBoards = [...new Set([...ownedBoards, ...memberBoards])];
-
-            allBoards.forEach((boardId) => {
-                const generalRoom = `board:${boardId}`;
-                socket.join(generalRoom);
-                console.log(`➡️ User ${userId} joined room ${generalRoom}`);
-            });
-
-            ownedBoards.forEach((boardId) => {
-                const ownerRoom = `board:${boardId}:owner`;
-                socket.join(ownerRoom);
-                console.log(`👑 Owner ${userId} joined room ${ownerRoom}`);
-            });
         });
 
         socket.on("disconnect", () => {
@@ -84,7 +65,7 @@ export const initSocket = (server: http.Server) => {
             for (const [userId, socketIds] of connectedUsers.entries()) {
                 if (socketIds.has(socket.id)) {
                     socketIds.delete(socket.id);
-                    
+
                     // If this user has no more connected sockets, emit offline event
                     if (socketIds.size === 0) {
                         connectedUsers.delete(userId);
@@ -92,7 +73,7 @@ export const initSocket = (server: http.Server) => {
                         User.findByIdAndUpdate(userId, { isActive: false, last_active: new Date() }).catch((err) => {
                             console.error("Failed to set user inactive:", err);
                         });
-                        
+
                         // Emit memberOffline to all workspace rooms this user was in
                         const workspaces = userWorkspaces.get(userId);
                         if (workspaces) {
