@@ -32,5 +32,16 @@ const BoardSchema = new Schema<IBoard>(
 
 BoardSchema.index({ workspace: 1, title: 1 });
 BoardSchema.index({ owner: 1 });
+// default create 3 lists when a board is created 
+BoardSchema.post('save', async function (doc, next) {
+    const ListModel = mongoose.model('List');
+    if (doc.lists.length === 0) {
+        const todoList = await ListModel.create({ title: 'To Do', board: doc._id, order: 1 });
+        const inProgressList = await ListModel.create({ title: 'In Progress', board: doc._id, order: 2 });
+        const doneList = await ListModel.create({ title: 'Done', board: doc._id, order: 3 });
+        doc.lists.push(todoList._id, inProgressList._id, doneList._id);
+        await doc.save();
+    }
+});
 
 export default model<IBoard>('Board', BoardSchema);
