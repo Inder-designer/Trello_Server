@@ -36,9 +36,9 @@ BoardSchema.index({ owner: 1 });
 BoardSchema.post('save', async function (doc, next) {
     const ListModel = mongoose.model('List');
     if (doc.lists.length === 0) {
-        const todoList = await ListModel.create({ title: 'To Do', board: doc._id, order: 1 });
-        const inProgressList = await ListModel.create({ title: 'In Progress', board: doc._id, order: 2 });
-        const doneList = await ListModel.create({ title: 'Done', board: doc._id, order: 3 });
+        const todoList = await ListModel.create({ title: 'To Do', boardId: doc._id, order: 1 });
+        const inProgressList = await ListModel.create({ title: 'In Progress', boardId: doc._id, order: 2 });
+        const doneList = await ListModel.create({ title: 'Done', boardId: doc._id, order: 3 });
         doc.lists.push(todoList._id, inProgressList._id, doneList._id);
         await doc.save();
     }
