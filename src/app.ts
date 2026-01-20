@@ -45,7 +45,41 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
-// Validate session for all routes
+// Public API docs (lightweight) - do not require session validation
+app.get('/api-docs', (_req, res) => {
+        res.setHeader('Content-Type', 'text/html');
+        res.send(`
+                <!doctype html>
+                <html>
+                <head>
+                    <meta charset="utf-8" />
+                    <meta name="viewport" content="width=device-width,initial-scale=1" />
+                    <title>API Docs</title>
+                    <style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;line-height:1.6;padding:20px;color:#111}h1{margin-bottom:0.25rem}code{background:#f3f4f6;padding:2px 6px;border-radius:4px}</style>
+                </head>
+                <body>
+                    <h1>API Docs</h1>
+                    <p>Available API groups (prefix <code>/api</code>):</p>
+                    <ul>
+                        <li><code>/api/auth</code> - authentication (login, register, tokens)</li>
+                        <li><code>/api/user</code> - user profile (requires authentication)</li>
+                        <li><code>/api/board</code> - board operations (requires authentication)</li>
+                        <li><code>/api/w</code> - workspace operations (requires authentication)</li>
+                        <li><code>/api/car</code> - car-related endpoints</li>
+                        <li><code>/api/admin</code> - admin endpoints</li>
+                        <li><code>/api/</code> - general endpoints</li>
+                    </ul>
+                    <p>Notes:</p>
+                    <ul>
+                        <li>Some endpoints require a valid session or authentication token.</li>
+                        <li>Use your frontend origin when making requests; CORS is enabled.</li>
+                    </ul>
+                </body>
+                </html>
+        `);
+});
+
+// Validate session for all other routes
 app.use(validateSession);
 
 app.use("/api", routes);
